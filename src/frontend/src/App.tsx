@@ -1,16 +1,8 @@
 import { Toaster } from "@/components/ui/sonner";
-import { Droplets, Loader2, LogIn, LogOut, Trash2 } from "lucide-react";
+import { Droplets, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Plant } from "./backend.d";
-import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import {
-  useClearPlot,
-  useGetGarden,
-  usePlantSeed,
-  useWaterPlant,
-} from "./hooks/useQueries";
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
 
@@ -20,52 +12,41 @@ type SeedKey =
   | "cactus"
   | "mushroom"
   | "cherry"
-  | "tulip";
+  | "tulip"
+  | "watermelon"
+  | "corn"
+  | "strawberry"
+  | "grape"
+  | "pumpkin"
+  | "bamboo"
+  | "blueberry"
+  | "coconut"
+  | "daisy"
+  | "lavender";
 
 interface SeedDef {
   id: SeedKey;
   name: string;
-  color: string;
   stages: [string, string, string, string];
 }
 
 const SEEDS: SeedDef[] = [
-  {
-    id: "sunflower",
-    name: "Sunflower",
-    color: "seed-sunflower",
-    stages: ["🌱", "🌿", "🌻", "🌻✨"],
-  },
-  {
-    id: "rose",
-    name: "Rose",
-    color: "seed-rose",
-    stages: ["🌱", "🌿", "🌹", "🌹✨"],
-  },
-  {
-    id: "cactus",
-    name: "Cactus",
-    color: "seed-cactus",
-    stages: ["🌱", "🌵", "🌵", "🌵✨"],
-  },
-  {
-    id: "mushroom",
-    name: "Mushroom",
-    color: "seed-mushroom",
-    stages: ["🌱", "🍄", "🍄", "🍄✨"],
-  },
-  {
-    id: "cherry",
-    name: "Cherry",
-    color: "seed-cherry",
-    stages: ["🌱", "🌿", "🍒", "🍒✨"],
-  },
-  {
-    id: "tulip",
-    name: "Tulip",
-    color: "seed-tulip",
-    stages: ["🌱", "🌿", "🌷", "🌷✨"],
-  },
+  { id: "sunflower", name: "Sunflower", stages: ["🌱", "🌿", "🌻", "🌻✨"] },
+  { id: "rose", name: "Rose", stages: ["🌱", "🌿", "🌹", "🌹✨"] },
+  { id: "cactus", name: "Cactus", stages: ["🌱", "🌵", "🌵", "🌵✨"] },
+  { id: "mushroom", name: "Mushroom", stages: ["🌱", "🍄", "🍄", "🍄✨"] },
+  { id: "cherry", name: "Cherry", stages: ["🌱", "🌿", "🍒", "🍒✨"] },
+  { id: "tulip", name: "Tulip", stages: ["🌱", "🌿", "🌷", "🌷✨"] },
+  { id: "watermelon", name: "Watermelon", stages: ["🌱", "🌿", "🍉", "🍉✨"] },
+  { id: "corn", name: "Corn", stages: ["🌱", "🌿", "🌽", "🌽✨"] },
+  { id: "strawberry", name: "Strawberry", stages: ["🌱", "🌿", "🍓", "🍓✨"] },
+  { id: "grape", name: "Grape", stages: ["🌱", "🌿", "🍇", "🍇✨"] },
+  { id: "pumpkin", name: "Pumpkin", stages: ["🌱", "🌿", "🎃", "🎃✨"] },
+  { id: "bamboo", name: "Bamboo", stages: ["🌱", "🎋", "🎋", "🎋✨"] },
+  { id: "blueberry", name: "Blueberry", stages: ["🌱", "🌿", "🫐", "🫐✨"] },
+  { id: "coconut", name: "Coconut", stages: ["🌱", "🌴", "🌴", "🌴✨"] },
+  { id: "daisy", name: "Daisy", stages: ["🌱", "🌿", "🌼", "🌼✨"] },
+  { id: "lavender", name: "Lavender", stages: ["🌱", "🌿", "💜", "💜✨"] },
 ];
 
 const SEED_MAP = Object.fromEntries(SEEDS.map((s) => [s.id, s])) as Record<
@@ -73,39 +54,79 @@ const SEED_MAP = Object.fromEntries(SEEDS.map((s) => [s.id, s])) as Record<
   SeedDef
 >;
 
-// Waters needed to advance each stage
-const WATERS_PER_STAGE: Record<number, number> = { 0: 3, 1: 4, 2: 5 };
+// Waters needed: stage 0→1: 3, 1→2: 3 more (6 total), 2→3: 4 more (10 total)
+const STAGE_THRESHOLD = [3, 6, 10];
 
-// Stable keys for the 12 plots (avoid array-index-key lint rule)
-const PLOT_KEYS = [
-  "plot-0",
-  "plot-1",
-  "plot-2",
-  "plot-3",
-  "plot-4",
-  "plot-5",
-  "plot-6",
-  "plot-7",
-  "plot-8",
-  "plot-9",
-  "plot-10",
-  "plot-11",
-] as const;
-
-function getPlantEmoji(plant: Plant): string {
-  const def = SEED_MAP[plant.seedType as SeedKey];
-  if (!def) return "🌱";
-  const stage = Number(plant.growthStage);
-  return def.stages[Math.min(stage, 3)];
+function getStageFromWater(waterCount: number): number {
+  if (waterCount >= STAGE_THRESHOLD[2]) return 3;
+  if (waterCount >= STAGE_THRESHOLD[1]) return 2;
+  if (waterCount >= STAGE_THRESHOLD[0]) return 1;
+  return 0;
 }
 
-function getWaterProgress(plant: Plant): number {
-  const stage = Number(plant.growthStage);
+function getWaterProgress(waterCount: number, stage: number): number {
   if (stage >= 3) return 100;
-  const needed = WATERS_PER_STAGE[stage] ?? 3;
-  const waterCount = Number(plant.waterCount);
-  return Math.min((waterCount / needed) * 100, 100);
+  const prev = stage === 0 ? 0 : STAGE_THRESHOLD[stage - 1];
+  const next = STAGE_THRESHOLD[stage];
+  return Math.min(((waterCount - prev) / (next - prev)) * 100, 100);
 }
+
+// ─── State Types ───────────────────────────────────────────────────────────────
+
+interface PlotState {
+  seedType: SeedKey;
+  growthStage: number;
+  waterCount: number;
+}
+
+interface GardenState {
+  plots: (PlotState | null)[];
+  basket: Partial<Record<SeedKey, number>>;
+  stats: { totalBlooms: number; totalWaters: number; totalHarvests: number };
+}
+
+const STORAGE_KEY = "emoji-garden-v2";
+const PLOT_COUNT = 16;
+
+function loadState(): GardenState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as GardenState;
+      // Ensure plots array is the right length
+      const plots = Array(PLOT_COUNT)
+        .fill(null)
+        .map((_, i) => parsed.plots?.[i] ?? null);
+      return {
+        plots,
+        basket: parsed.basket ?? {},
+        stats: parsed.stats ?? {
+          totalBlooms: 0,
+          totalWaters: 0,
+          totalHarvests: 0,
+        },
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    plots: Array(PLOT_COUNT).fill(null),
+    basket: {},
+    stats: { totalBlooms: 0, totalWaters: 0, totalHarvests: 0 },
+  };
+}
+
+function saveState(state: GardenState) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+// Stable keys for the 16 plots
+const PLOT_KEYS = Array.from({ length: PLOT_COUNT }, (_, i) => `plot-${i}`);
 
 // ─── Sparkle ──────────────────────────────────────────────────────────────────
 
@@ -119,7 +140,10 @@ interface SparkleItem {
 function FloatingSparkle({
   sparkle,
   onDone,
-}: { sparkle: SparkleItem; onDone: (id: number) => void }) {
+}: {
+  sparkle: SparkleItem;
+  onDone: (id: number) => void;
+}) {
   return (
     <motion.div
       className="fixed pointer-events-none z-50 text-2xl select-none"
@@ -145,14 +169,13 @@ interface ContextMenuState {
 // ─── Plot Cell ────────────────────────────────────────────────────────────────
 
 interface PlotCellProps {
-  plot: Plant | null;
+  plot: PlotState | null;
   index: number;
   selectedSeed: SeedKey | null;
   onPlant: (index: number, e: React.MouseEvent) => void;
   onWater: (index: number, e: React.MouseEvent) => void;
-  onBloom: (index: number, e: React.MouseEvent) => void;
+  onHarvest: (index: number, e: React.MouseEvent) => void;
   onContextMenu: (index: number, e: React.MouseEvent) => void;
-  isLoading: boolean;
   animKey: number;
 }
 
@@ -162,24 +185,24 @@ function PlotCell({
   selectedSeed,
   onPlant,
   onWater,
-  onBloom,
+  onHarvest,
   onContextMenu,
-  isLoading,
   animKey,
 }: PlotCellProps) {
   const isEmpty = plot === null;
   const canPlant = isEmpty && selectedSeed !== null;
-  const stage = plot ? Number(plot.growthStage) : 0;
+  const stage = plot ? plot.growthStage : 0;
   const isBloomed = stage === 3;
-  const emoji = plot ? getPlantEmoji(plot) : "";
-  const progress = plot ? getWaterProgress(plot) : 0;
+  const emoji = plot
+    ? (SEED_MAP[plot.seedType]?.stages[Math.min(stage, 3)] ?? "🌱")
+    : "";
+  const progress = plot ? getWaterProgress(plot.waterCount, stage) : 0;
 
   function handleClick(e: React.MouseEvent) {
-    if (isLoading) return;
     if (isEmpty) {
       if (canPlant) onPlant(index, e);
     } else if (isBloomed) {
-      onBloom(index, e);
+      onHarvest(index, e);
     } else {
       onWater(index, e);
     }
@@ -193,15 +216,12 @@ function PlotCell({
         "transition-all duration-150 outline-none",
         "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
         isEmpty && !canPlant ? "cursor-default" : "cursor-pointer",
-        isLoading ? "opacity-70 cursor-wait" : "",
       ].join(" ")}
       style={{
         aspectRatio: "1",
-        background: isEmpty
-          ? "radial-gradient(ellipse at 40% 35%, oklch(0.62 0.1 55) 0%, oklch(0.48 0.1 48) 55%, oklch(0.38 0.08 42) 100%)"
-          : isBloomed
-            ? "radial-gradient(ellipse at 40% 35%, oklch(0.68 0.14 62) 0%, oklch(0.52 0.12 52) 55%, oklch(0.4 0.09 44) 100%)"
-            : "radial-gradient(ellipse at 40% 35%, oklch(0.62 0.1 55) 0%, oklch(0.48 0.1 48) 55%, oklch(0.38 0.08 42) 100%)",
+        background: isBloomed
+          ? "radial-gradient(ellipse at 40% 35%, oklch(0.68 0.14 62) 0%, oklch(0.52 0.12 52) 55%, oklch(0.4 0.09 44) 100%)"
+          : "radial-gradient(ellipse at 40% 35%, oklch(0.62 0.1 55) 0%, oklch(0.48 0.1 48) 55%, oklch(0.38 0.08 42) 100%)",
         boxShadow:
           "inset 0 2px 6px rgba(0,0,0,0.28), 0 3px 8px rgba(0,0,0,0.18)",
       }}
@@ -213,25 +233,19 @@ function PlotCell({
         }
       }}
       whileHover={
-        (canPlant || !isEmpty) && !isLoading
-          ? { scale: 1.08, y: -2 }
-          : { scale: 1.02 }
+        canPlant || !isEmpty ? { scale: 1.08, y: -2 } : { scale: 1.02 }
       }
-      whileTap={!isLoading ? { scale: 0.9 } : {}}
+      whileTap={{ scale: 0.9 }}
       aria-label={
         isEmpty
           ? canPlant
             ? `Plant ${selectedSeed} here`
             : "Empty plot"
-          : `${plot?.seedType} — stage ${stage}, progress ${Math.round(progress)}%`
+          : isBloomed
+            ? `${plot?.seedType} fully bloomed — tap to harvest!`
+            : `${plot?.seedType} — stage ${stage}, progress ${Math.round(progress)}%`
       }
     >
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/10 z-10">
-          <Loader2 size={16} className="animate-spin text-white/80" />
-        </div>
-      )}
-
       {isEmpty ? (
         <>
           {canPlant ? (
@@ -287,27 +301,43 @@ function PlotCell({
             {emoji}
           </motion.span>
 
-          {/* Bloom glow */}
-          {isBloomed && (
-            <motion.div
-              className="absolute inset-0 rounded-2xl pointer-events-none"
-              animate={{
-                boxShadow: [
-                  "0 0 0px 0px rgba(255,210,60,0)",
-                  "0 0 16px 6px rgba(255,210,60,0.6)",
-                  "0 0 0px 0px rgba(255,210,60,0)",
-                ],
-              }}
-              transition={{
-                duration: 2.4,
-                repeat: Number.POSITIVE_INFINITY,
-                ease: "easeInOut",
-              }}
-            />
-          )}
-
-          {/* Water progress bar */}
-          {!isBloomed && (
+          {/* Harvest prompt */}
+          {isBloomed ? (
+            <>
+              <motion.div
+                className="absolute inset-0 rounded-2xl pointer-events-none"
+                animate={{
+                  boxShadow: [
+                    "0 0 0px 0px rgba(255,210,60,0)",
+                    "0 0 18px 7px rgba(255,210,60,0.65)",
+                    "0 0 0px 0px rgba(255,210,60,0)",
+                  ],
+                }}
+                transition={{
+                  duration: 2.4,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "easeInOut",
+                }}
+              />
+              <motion.span
+                className="absolute bottom-1.5 text-[9px] font-bold leading-tight"
+                style={{
+                  color: "oklch(0.95 0.14 85)",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                  letterSpacing: "0.03em",
+                }}
+                animate={{ opacity: [0.75, 1, 0.75] }}
+                transition={{
+                  duration: 1.6,
+                  repeat: Number.POSITIVE_INFINITY,
+                  ease: "easeInOut",
+                }}
+              >
+                🧺 Harvest!
+              </motion.span>
+            </>
+          ) : (
+            /* Water progress bar */
             <div className="absolute bottom-2 left-2 right-2">
               <div
                 className="h-1.5 rounded-full overflow-hidden"
@@ -346,7 +376,7 @@ function SeedButton({ seed, index, isSelected, onSelect }: SeedButtonProps) {
     <motion.button
       data-ocid={`seed.item.${index + 1}`}
       className={[
-        "flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl",
+        "flex flex-col items-center gap-0.5 px-1.5 py-2 rounded-xl",
         "transition-all duration-150 outline-none",
         "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
         isSelected
@@ -367,9 +397,9 @@ function SeedButton({ seed, index, isSelected, onSelect }: SeedButtonProps) {
       aria-pressed={isSelected}
       aria-label={`${seed.name} seed${isSelected ? ", selected" : ""}`}
     >
-      <span className="text-2xl leading-none">{seed.stages[3]}</span>
+      <span className="text-xl leading-none">{seed.stages[3]}</span>
       <span
-        className="text-xs font-semibold leading-tight"
+        className="text-[10px] font-semibold leading-tight truncate w-full text-center"
         style={{
           color: isSelected ? "oklch(0.28 0.1 145)" : "oklch(0.42 0.08 145)",
         }}
@@ -388,145 +418,141 @@ function SeedButton({ seed, index, isSelected, onSelect }: SeedButtonProps) {
   );
 }
 
-// ─── Login Screen ─────────────────────────────────────────────────────────────
+// ─── Basket Panel ─────────────────────────────────────────────────────────────
 
-function LoginScreen({
-  onLogin,
-  isLoggingIn,
-}: { onLogin: () => void; isLoggingIn: boolean }) {
+interface BasketPanelProps {
+  basket: Partial<Record<SeedKey, number>>;
+}
+
+function BasketPanel({ basket }: BasketPanelProps) {
+  const entries = Object.entries(basket).filter(
+    ([, count]) => (count ?? 0) > 0,
+  ) as [SeedKey, number][];
+
   return (
-    <div className="min-h-screen garden-bg flex flex-col items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        className="flex flex-col items-center gap-6 max-w-sm w-full"
+    <section
+      data-ocid="basket.panel"
+      className="rounded-3xl p-4"
+      style={{
+        background: "oklch(0.96 0.06 75 / 0.82)",
+        boxShadow:
+          "0 4px 20px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.85)",
+        backdropFilter: "blur(14px)",
+        border: "1.5px solid oklch(0.84 0.1 75 / 0.5)",
+      }}
+    >
+      {/* Basket header */}
+      <div
+        className="flex items-center gap-2 mb-3"
+        style={{ fontFamily: "Fraunces, serif" }}
       >
-        {/* Garden header */}
-        <motion.div
-          className="text-center"
-          animate={{ y: [0, -6, 0] }}
+        <motion.span
+          className="text-2xl"
+          animate={{ rotate: [-4, 4, -4] }}
           transition={{
-            duration: 3,
+            duration: 3.5,
             repeat: Number.POSITIVE_INFINITY,
             ease: "easeInOut",
           }}
         >
-          <div className="text-7xl mb-3">🌻</div>
-          <h1
-            className="text-4xl font-bold tracking-tight"
+          🧺
+        </motion.span>
+        <h2
+          className="text-lg font-bold"
+          style={{ color: "oklch(0.3 0.1 60)" }}
+        >
+          Harvest Basket
+        </h2>
+        {entries.length > 0 && (
+          <span
+            className="ml-auto text-sm font-semibold px-2 py-0.5 rounded-full"
             style={{
-              fontFamily: "Fraunces, serif",
-              color: "oklch(0.24 0.09 140)",
+              background: "oklch(0.84 0.14 70 / 0.5)",
+              color: "oklch(0.3 0.1 60)",
             }}
           >
-            Emoji Garden
-          </h1>
-          <p className="mt-2 text-sm" style={{ color: "oklch(0.44 0.1 140)" }}>
-            Plant seeds · Water them · Watch them bloom
-          </p>
-        </motion.div>
+            {entries.reduce((sum, [, c]) => sum + c, 0)} total
+          </span>
+        )}
+      </div>
 
-        {/* Decorative plants */}
-        <div className="flex gap-4 text-4xl" aria-hidden="true">
-          {(["🌷-0", "🌵-1", "🍄-2", "🌹-3", "🍒-4"] as const).map(
-            (emKey, i) => (
-              <motion.span
-                key={emKey}
-                animate={{ rotate: ["-3deg", "3deg", "-3deg"] }}
-                transition={{
-                  duration: 2.5 + i * 0.3,
-                  repeat: Number.POSITIVE_INFINITY,
-                  ease: "easeInOut",
-                  delay: i * 0.2,
-                }}
-              >
-                {emKey.replace(/-\d$/, "")}
-              </motion.span>
-            ),
-          )}
+      {entries.length === 0 ? (
+        <div
+          data-ocid="basket.empty_state"
+          className="flex flex-col items-center gap-2 py-6 text-center"
+        >
+          <span className="text-4xl opacity-40">🌱</span>
+          <p className="text-sm" style={{ color: "oklch(0.5 0.08 70)" }}>
+            Your basket is empty — harvest bloomed plants to fill it!
+          </p>
         </div>
-
-        {/* Login card */}
-        <motion.div
-          className="w-full rounded-3xl p-6 flex flex-col items-center gap-4"
-          style={{
-            background: "oklch(0.97 0.02 90 / 0.82)",
-            boxShadow:
-              "0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)",
-            backdropFilter: "blur(16px)",
-            border: "1.5px solid oklch(0.86 0.06 145 / 0.5)",
-          }}
-        >
-          <p
-            className="text-center text-sm leading-relaxed"
-            style={{ color: "oklch(0.38 0.07 145)" }}
-          >
-            Sign in to save your garden and watch your plants grow across
-            visits! 🌱
-          </p>
-
-          <motion.button
-            data-ocid="login.button"
-            className="w-full flex items-center justify-center gap-2.5 px-6 py-3 rounded-2xl font-semibold text-base"
-            style={{
-              background: "oklch(0.5 0.16 145)",
-              color: "oklch(0.98 0.01 90)",
-              boxShadow: "0 4px 16px oklch(0.5 0.16 145 / 0.4)",
-            }}
-            onClick={onLogin}
-            disabled={isLoggingIn}
-            whileHover={{ scale: 1.02, y: -1 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {isLoggingIn ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <LogIn size={18} />
-            )}
-            {isLoggingIn ? "Connecting..." : "Sign In to Garden"}
-          </motion.button>
-        </motion.div>
-
-        {/* Footer */}
-        <p
-          className="text-xs text-center"
-          style={{ color: "oklch(0.44 0.06 220)" }}
-        >
-          © {new Date().getFullYear()}.{" "}
-          <a
-            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2 hover:opacity-75 transition-opacity"
-          >
-            Built with ❤️ using caffeine.ai
-          </a>
-        </p>
-      </motion.div>
-    </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <AnimatePresence>
+            {entries.map(([seedKey, count], i) => {
+              const def = SEED_MAP[seedKey];
+              if (!def) return null;
+              return (
+                <motion.div
+                  key={seedKey}
+                  data-ocid={`basket.item.${i + 1}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl"
+                  style={{
+                    background: "oklch(0.92 0.1 75 / 0.7)",
+                    boxShadow:
+                      "0 2px 8px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.7)",
+                    border: "1px solid oklch(0.8 0.1 70 / 0.4)",
+                  }}
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 22 }}
+                  layout
+                >
+                  <span className="text-xl leading-none">{def.stages[3]}</span>
+                  <div className="flex flex-col leading-none">
+                    <span
+                      className="text-xs font-bold"
+                      style={{ color: "oklch(0.28 0.1 60)" }}
+                    >
+                      {def.name}
+                    </span>
+                  </div>
+                  <span
+                    className="text-sm font-bold px-1.5 py-0.5 rounded-full ml-1"
+                    style={{
+                      background: "oklch(0.72 0.16 60)",
+                      color: "oklch(0.98 0.02 80)",
+                    }}
+                  >
+                    ×{count}
+                  </span>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
+    </section>
   );
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const { identity, login, clear, isLoggingIn, isInitializing } =
-    useInternetIdentity();
-  const isAuthenticated = !!identity;
-
-  const { data: garden, isLoading: gardenLoading } = useGetGarden();
-
-  const plantSeedMutation = usePlantSeed();
-  const waterPlantMutation = useWaterPlant();
-  const clearPlotMutation = useClearPlot();
-
+  const [gardenState, setGardenState] = useState<GardenState>(loadState);
   const [selectedSeed, setSelectedSeed] = useState<SeedKey>("sunflower");
-  const [animKeys, setAnimKeys] = useState<number[]>(() => Array(12).fill(0));
+  const [animKeys, setAnimKeys] = useState<number[]>(() =>
+    Array(PLOT_COUNT).fill(0),
+  );
   const [sparkles, setSparkles] = useState<SparkleItem[]>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [pendingPlots, setPendingPlots] = useState<Set<number>>(new Set());
   const sparkleIdRef = useRef(0);
+
+  // Persist to localStorage whenever state changes
+  useEffect(() => {
+    saveState(gardenState);
+  }, [gardenState]);
 
   const addSparkle = useCallback((x: number, y: number, emoji: string) => {
     const id = ++sparkleIdRef.current;
@@ -546,95 +572,102 @@ export default function App() {
   }, []);
 
   const handlePlant = useCallback(
-    async (index: number, e: React.MouseEvent) => {
-      if (!isAuthenticated || pendingPlots.has(index)) return;
+    (index: number, e: React.MouseEvent) => {
       const cx = e.clientX;
       const cy = e.clientY;
-      setPendingPlots((s) => new Set([...s, index]));
-      try {
-        await plantSeedMutation.mutateAsync({
-          plotIndex: BigInt(index),
+      setGardenState((prev) => {
+        const plots = [...prev.plots];
+        plots[index] = {
           seedType: selectedSeed,
-        });
-        bumpAnimKey(index);
-        addSparkle(cx, cy, "🌱");
-        toast.success(`${SEED_MAP[selectedSeed].name} planted! 🌱`, {
-          duration: 1800,
-        });
-      } catch {
-        toast.error("Could not plant seed");
-      } finally {
-        setPendingPlots((s) => {
-          const n = new Set(s);
-          n.delete(index);
-          return n;
-        });
-      }
+          growthStage: 0,
+          waterCount: 0,
+        };
+        return { ...prev, plots };
+      });
+      bumpAnimKey(index);
+      addSparkle(cx, cy, "🌱");
+      toast.success(`${SEED_MAP[selectedSeed].name} planted! 🌱`, {
+        duration: 1800,
+      });
     },
-    [
-      isAuthenticated,
-      selectedSeed,
-      plantSeedMutation,
-      bumpAnimKey,
-      addSparkle,
-      pendingPlots,
-    ],
+    [selectedSeed, bumpAnimKey, addSparkle],
   );
 
   const handleWater = useCallback(
-    async (index: number, e: React.MouseEvent) => {
-      if (!isAuthenticated || pendingPlots.has(index)) return;
+    (index: number, e: React.MouseEvent) => {
       const cx = e.clientX;
       const cy = e.clientY;
-      const plot = garden?.plots[index];
-      const prevStage = plot ? Number(plot.growthStage) : 0;
-      setPendingPlots((s) => new Set([...s, index]));
-      try {
-        await waterPlantMutation.mutateAsync({ plotIndex: BigInt(index) });
-        bumpAnimKey(index);
-        addSparkle(cx, cy, "💧");
-        // We check after refetch via the garden data
-        const updatedPlot = garden?.plots[index];
-        const newStage = updatedPlot
-          ? Number(updatedPlot.growthStage)
-          : prevStage;
-        if (newStage > prevStage && newStage === 3) {
-          const seedName = plot
-            ? (SEED_MAP[plot.seedType as SeedKey]?.name ?? plot.seedType)
-            : "";
-          toast.success(`${seedName} bloomed! 🌸`, { duration: 2400 });
-          addSparkle(cx - 8, cy - 20, "🌸");
-          addSparkle(cx + 12, cy - 30, "✨");
+      setGardenState((prev) => {
+        const plots = [...prev.plots];
+        const plot = plots[index];
+        if (!plot) return prev;
+
+        const newWaterCount = plot.waterCount + 1;
+        const newStage = getStageFromWater(newWaterCount);
+        const justBloomed = newStage === 3 && plot.growthStage < 3;
+
+        plots[index] = {
+          ...plot,
+          waterCount: newWaterCount,
+          growthStage: newStage,
+        };
+
+        const stats = { ...prev.stats };
+        stats.totalWaters += 1;
+        if (justBloomed) {
+          stats.totalBlooms += 1;
+          // Schedule toast outside setState
+          setTimeout(() => {
+            const seedName = SEED_MAP[plot.seedType]?.name ?? plot.seedType;
+            toast.success(`${seedName} bloomed! 🌸`, { duration: 2400 });
+            addSparkle(cx - 8, cy - 20, "🌸");
+            addSparkle(cx + 12, cy - 30, "✨");
+          }, 50);
         }
-      } catch {
-        toast.error("Could not water plant");
-      } finally {
-        setPendingPlots((s) => {
-          const n = new Set(s);
-          n.delete(index);
-          return n;
-        });
-      }
+
+        return { ...prev, plots, stats };
+      });
+      bumpAnimKey(index);
+      addSparkle(cx, cy, "💧");
     },
-    [
-      isAuthenticated,
-      garden,
-      waterPlantMutation,
-      bumpAnimKey,
-      addSparkle,
-      pendingPlots,
-    ],
+    [bumpAnimKey, addSparkle],
   );
 
-  const handleBloom = useCallback(
-    (_index: number, e: React.MouseEvent) => {
+  const handleHarvest = useCallback(
+    (index: number, e: React.MouseEvent) => {
       const cx = e.clientX;
       const cy = e.clientY;
-      addSparkle(cx - 10, cy - 15, "✨");
-      addSparkle(cx + 8, cy - 30, "🌟");
-      addSparkle(cx - 5, cy - 40, "🎉");
+      setGardenState((prev) => {
+        const plots = [...prev.plots];
+        const plot = plots[index];
+        if (!plot || plot.growthStage !== 3) return prev;
+
+        const seedType = plot.seedType;
+        plots[index] = null;
+
+        const basket = { ...prev.basket };
+        basket[seedType] = (basket[seedType] ?? 0) + 1;
+
+        const stats = {
+          ...prev.stats,
+          totalHarvests: prev.stats.totalHarvests + 1,
+        };
+
+        setTimeout(() => {
+          const seedName = SEED_MAP[seedType]?.name ?? seedType;
+          toast.success(`${seedName} harvested! Added to basket 🧺`, {
+            duration: 2000,
+          });
+          addSparkle(cx - 10, cy - 15, "✨");
+          addSparkle(cx + 8, cy - 30, "🌟");
+          addSparkle(cx - 5, cy - 40, "🎉");
+        }, 50);
+
+        return { ...prev, plots, basket, stats };
+      });
+      bumpAnimKey(index);
     },
-    [addSparkle],
+    [bumpAnimKey, addSparkle],
   );
 
   const handleContextMenu = useCallback(
@@ -646,77 +679,20 @@ export default function App() {
   );
 
   const handleClearPlot = useCallback(
-    async (index: number) => {
+    (index: number) => {
       setContextMenu(null);
-      if (!isAuthenticated || pendingPlots.has(index)) return;
-      setPendingPlots((s) => new Set([...s, index]));
-      try {
-        await clearPlotMutation.mutateAsync({ plotIndex: BigInt(index) });
-        bumpAnimKey(index);
-        toast("Plot cleared 🪴", { duration: 1600 });
-      } catch {
-        toast.error("Could not clear plot");
-      } finally {
-        setPendingPlots((s) => {
-          const n = new Set(s);
-          n.delete(index);
-          return n;
-        });
-      }
+      setGardenState((prev) => {
+        const plots = [...prev.plots];
+        plots[index] = null;
+        return { ...prev, plots };
+      });
+      bumpAnimKey(index);
+      toast("Plot cleared 🪴", { duration: 1600 });
     },
-    [isAuthenticated, clearPlotMutation, bumpAnimKey, pendingPlots],
+    [bumpAnimKey],
   );
 
-  // Show initializing state
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen garden-bg flex items-center justify-center">
-        <motion.div
-          data-ocid="garden.loading_state"
-          className="flex flex-col items-center gap-3"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <motion.span
-            className="text-5xl"
-            animate={{ rotate: [0, 15, -10, 8, 0] }}
-            transition={{
-              duration: 1.8,
-              repeat: Number.POSITIVE_INFINITY,
-              ease: "easeInOut",
-            }}
-          >
-            🌻
-          </motion.span>
-          <p
-            style={{
-              color: "oklch(0.3 0.08 140)",
-              fontFamily: "Fraunces, serif",
-            }}
-          >
-            Growing your garden…
-          </p>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // Login screen
-  if (!isAuthenticated) {
-    return (
-      <>
-        <LoginScreen onLogin={login} isLoggingIn={isLoggingIn} />
-        <Toaster position="top-center" richColors />
-      </>
-    );
-  }
-
-  const plots = garden?.plots ?? Array(12).fill(null);
-  const stats = garden?.stats ?? { totalBlooms: 0n, totalWaters: 0n };
-  const totalBlooms = Number(stats.totalBlooms);
-  const totalWaters = Number(stats.totalWaters);
-  const principal = identity?.getPrincipal().toString() ?? "";
-  const shortPrincipal = `${principal.slice(0, 5)}…${principal.slice(-3)}`;
+  const { plots, basket, stats } = gardenState;
 
   return (
     <div
@@ -756,68 +732,40 @@ export default function App() {
                 className="text-xs mt-0.5"
                 style={{ color: "oklch(0.44 0.1 140)" }}
               >
-                Plant · Water · Bloom
+                Plant · Water · Harvest
               </p>
             </div>
           </div>
 
-          {/* User + stats + logout */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Stats */}
-            <div
-              data-ocid="stats.panel"
-              className="flex items-center gap-3 px-4 py-2 rounded-2xl font-semibold text-sm"
-              style={{
-                background: "oklch(0.97 0.02 90 / 0.88)",
-                boxShadow:
-                  "0 2px 12px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)",
-                color: "oklch(0.3 0.1 55)",
-                backdropFilter: "blur(8px)",
-              }}
-            >
-              <span className="flex items-center gap-1">
-                <span>🌸</span>
-                <span>{totalBlooms}</span>
-                <span className="font-normal opacity-60 text-xs">bloomed</span>
-              </span>
-              <span className="opacity-30">|</span>
-              <span className="flex items-center gap-1">
-                <Droplets size={14} style={{ color: "oklch(0.56 0.18 220)" }} />
-                <span>{totalWaters}</span>
-                <span className="font-normal opacity-60 text-xs">watered</span>
-              </span>
-            </div>
-
-            {/* User pill */}
-            <div
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
-              style={{
-                background: "oklch(0.96 0.04 145 / 0.75)",
-                color: "oklch(0.4 0.1 145)",
-                border: "1px solid oklch(0.82 0.08 145 / 0.4)",
-              }}
-            >
-              <span>🪪</span>
-              <span>{shortPrincipal}</span>
-            </div>
-
-            {/* Logout */}
-            <motion.button
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium"
-              style={{
-                background: "oklch(0.97 0.02 90 / 0.72)",
-                color: "oklch(0.45 0.08 20)",
-                border: "1.5px solid oklch(0.8 0.08 20 / 0.3)",
-                backdropFilter: "blur(8px)",
-              }}
-              onClick={clear}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              aria-label="Sign out"
-            >
-              <LogOut size={14} />
-              <span className="hidden sm:inline">Sign Out</span>
-            </motion.button>
+          {/* Stats */}
+          <div
+            data-ocid="stats.panel"
+            className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-2xl font-semibold text-sm flex-wrap"
+            style={{
+              background: "oklch(0.97 0.02 90 / 0.88)",
+              boxShadow:
+                "0 2px 12px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.9)",
+              color: "oklch(0.3 0.1 55)",
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            <span className="flex items-center gap-1">
+              <span>🌸</span>
+              <span>{stats.totalBlooms}</span>
+              <span className="font-normal opacity-60 text-xs">bloomed</span>
+            </span>
+            <span className="opacity-30">|</span>
+            <span className="flex items-center gap-1">
+              <Droplets size={14} style={{ color: "oklch(0.56 0.18 220)" }} />
+              <span>{stats.totalWaters}</span>
+              <span className="font-normal opacity-60 text-xs">watered</span>
+            </span>
+            <span className="opacity-30">|</span>
+            <span className="flex items-center gap-1">
+              <span>🧺</span>
+              <span>{stats.totalHarvests}</span>
+              <span className="font-normal opacity-60 text-xs">harvested</span>
+            </span>
           </div>
         </div>
       </header>
@@ -826,7 +774,6 @@ export default function App() {
       <main className="flex-1 flex flex-col gap-4 px-4 pb-4 max-w-5xl mx-auto w-full">
         {/* ── Seed Selector Tray ── */}
         <section
-          data-ocid="seed.selector.panel"
           className="rounded-3xl p-3"
           style={{
             background: "oklch(0.96 0.05 145 / 0.72)",
@@ -845,7 +792,7 @@ export default function App() {
           >
             🌱 Choose a Seed
           </div>
-          <div className="grid grid-cols-6 gap-2">
+          <div className="grid grid-cols-8 gap-1.5 sm:gap-2">
             {SEEDS.map((seed, i) => (
               <SeedButton
                 key={seed.id}
@@ -887,16 +834,20 @@ export default function App() {
               "🌿-j",
               "🍃-k",
               "🌿-l",
+              "🌿-m",
+              "🍀-n",
+              "🌱-o",
+              "🍃-p",
             ].map((gKey, i) => (
               <motion.span
                 key={gKey}
                 className="text-sm opacity-75"
                 animate={{ rotate: ["-2deg", "2deg", "-2deg"] }}
                 transition={{
-                  duration: 2.2 + i * 0.2,
+                  duration: 2.2 + i * 0.15,
                   repeat: Number.POSITIVE_INFINITY,
                   ease: "easeInOut",
-                  delay: i * 0.12,
+                  delay: i * 0.1,
                 }}
               >
                 {gKey.replace(/-\w$/, "")}
@@ -904,63 +855,37 @@ export default function App() {
             ))}
           </div>
 
-          {/* Loading overlay */}
-          {gardenLoading && (
-            <div
-              data-ocid="garden.loading_state"
-              className="flex-1 flex items-center justify-center py-16"
-            >
-              <motion.div
-                className="flex flex-col items-center gap-3"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
-                <motion.span
-                  className="text-5xl"
-                  animate={{ scale: [1, 1.15, 1] }}
-                  transition={{
-                    duration: 1.4,
-                    repeat: Number.POSITIVE_INFINITY,
-                  }}
-                >
-                  🌱
-                </motion.span>
-                <p
-                  style={{
-                    color: "oklch(0.35 0.08 140)",
-                    fontFamily: "Fraunces, serif",
-                  }}
-                >
-                  Loading your garden…
-                </p>
-              </motion.div>
-            </div>
-          )}
+          {/* Loading state placeholder (kept for marker requirement) */}
+          <div
+            data-ocid="garden.loading_state"
+            className="hidden"
+            aria-hidden="true"
+          />
 
           {/* Grid */}
-          {!gardenLoading && (
-            <div
-              data-ocid="garden.canvas_target"
-              className="flex-1 grid gap-2 sm:gap-3 p-3 sm:p-4"
-              style={{ gridTemplateColumns: "repeat(4, 1fr)" }}
-            >
-              {PLOT_KEYS.map((plotKey, i) => (
-                <PlotCell
-                  key={plotKey}
-                  plot={plots[i] ?? null}
-                  index={i}
-                  selectedSeed={selectedSeed}
-                  onPlant={handlePlant}
-                  onWater={handleWater}
-                  onBloom={handleBloom}
-                  onContextMenu={handleContextMenu}
-                  isLoading={pendingPlots.has(i)}
-                  animKey={animKeys[i]}
-                />
-              ))}
-            </div>
-          )}
+          <div
+            data-ocid="garden.canvas_target"
+            className="flex-1 grid gap-2 sm:gap-3 p-3 sm:p-4"
+            style={{ gridTemplateColumns: "repeat(4, 1fr)" }}
+          >
+            {PLOT_KEYS.map((plotKey, i) => (
+              <PlotCell
+                key={plotKey}
+                plot={plots[i] ?? null}
+                index={i}
+                selectedSeed={selectedSeed}
+                onPlant={handlePlant}
+                onWater={handleWater}
+                onHarvest={handleHarvest}
+                onContextMenu={handleContextMenu}
+                animKey={animKeys[i]}
+              />
+            ))}
+          </div>
         </section>
+
+        {/* ── Harvest Basket ── */}
+        <BasketPanel basket={basket} />
 
         {/* ── Tip bar ── */}
         <motion.div
@@ -980,11 +905,9 @@ export default function App() {
             style={{ color: "oklch(0.62 0.18 220)", flexShrink: 0 }}
           />
           <span>
-            <strong>{SEED_MAP[selectedSeed].name}</strong> selected — click an
-            empty plot to plant, then click to water!
-            <span className="opacity-60 ml-1">
-              (Right-click a plant to remove it)
-            </span>
+            Select a seed, plant it, water it to grow, then harvest when
+            bloomed!
+            <span className="opacity-60 ml-1">(Right-click to remove.)</span>
           </span>
         </motion.div>
       </main>
