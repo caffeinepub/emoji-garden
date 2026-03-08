@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("/assets/fonts/Fraunces.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/Figtree.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 1rem;
+
+    /* Sky blue background */
+    --background: 0.93 0.055 220;
+    --foreground: 0.2 0.05 260;
+
+    /* Card — soft cream */
+    --card: 0.97 0.02 90;
+    --card-foreground: 0.22 0.04 50;
+
+    /* Popover */
+    --popover: 0.97 0.02 90;
+    --popover-foreground: 0.22 0.04 50;
+
+    /* Primary — leaf green */
+    --primary: 0.5 0.16 145;
+    --primary-foreground: 0.98 0.01 90;
+
+    /* Secondary — warm golden */
+    --secondary: 0.87 0.12 85;
+    --secondary-foreground: 0.25 0.05 50;
+
+    /* Muted */
+    --muted: 0.9 0.03 145;
+    --muted-foreground: 0.48 0.06 145;
+
+    /* Accent — sunny yellow */
+    --accent: 0.92 0.14 95;
+    --accent-foreground: 0.25 0.06 50;
+
+    /* Destructive */
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    /* Borders */
+    --border: 0.82 0.06 145;
+    --input: 0.88 0.04 145;
+    --ring: 0.5 0.16 145;
+
+    /* Charts */
+    --chart-1: 0.72 0.2 145;
+    --chart-2: 0.78 0.18 95;
+    --chart-3: 0.65 0.18 220;
+    --chart-4: 0.75 0.22 30;
+    --chart-5: 0.68 0.2 320;
+
+    /* Sidebar */
+    --sidebar: 0.94 0.04 145;
+    --sidebar-foreground: 0.22 0.05 145;
+    --sidebar-primary: 0.5 0.16 145;
+    --sidebar-primary-foreground: 0.98 0.01 90;
+    --sidebar-accent: 0.88 0.08 145;
+    --sidebar-accent-foreground: 0.22 0.05 145;
+    --sidebar-border: 0.82 0.06 145;
+    --sidebar-ring: 0.5 0.16 145;
+
+    /* Garden-specific tokens */
+    --soil: 0.55 0.1 50;
+    --soil-hover: 0.48 0.12 50;
+    --soil-dark: 0.38 0.08 50;
+    --sky-top: 0.78 0.1 235;
+    --sky-bottom: 0.94 0.055 220;
+    --grass: 0.62 0.18 140;
+    --water-fill: 0.65 0.18 220;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Figtree", sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Fraunces", serif;
+  }
+
+  /* Garden background */
+  .garden-bg {
+    background: linear-gradient(
+      180deg,
+      oklch(0.72 0.1 235) 0%,
+      oklch(0.85 0.07 220) 45%,
+      oklch(0.93 0.055 220) 100%
+    );
+  }
+
+  /* Soil plot */
+  .plot-soil {
+    background: radial-gradient(
+      ellipse at 40% 35%,
+      oklch(0.62 0.1 55) 0%,
+      oklch(0.48 0.1 48) 55%,
+      oklch(0.38 0.08 42) 100%
+    );
+  }
+
+  .plot-soil-hover {
+    background: radial-gradient(
+      ellipse at 40% 35%,
+      oklch(0.65 0.12 60) 0%,
+      oklch(0.52 0.12 52) 55%,
+      oklch(0.42 0.09 46) 100%
+    );
+  }
+
+  /* Water progress */
+  .water-progress-track {
+    background: oklch(0.3 0.05 50 / 0.4);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .water-progress-fill {
+    background: linear-gradient(90deg, oklch(0.65 0.18 220), oklch(0.75 0.15 210));
+    border-radius: 999px;
+    transition: width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* Seed card selected */
+  .seed-selected {
+    box-shadow:
+      0 0 0 3px oklch(0.5 0.16 145),
+      0 4px 16px oklch(0.5 0.16 145 / 0.35);
+  }
+
+  /* Bloom sparkle animation */
+  @keyframes bloom-pop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.35) rotate(-5deg); }
+    70% { transform: scale(0.92) rotate(3deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+
+  .bloom-pop {
+    animation: bloom-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes water-ripple {
+    0% { transform: scale(1); opacity: 1; }
+    60% { transform: scale(1.12); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .water-ripple {
+    animation: water-ripple 0.28s ease-out;
+  }
+
+  @keyframes happiness-pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+    100% { transform: scale(1); }
+  }
+
+  .happiness-pop {
+    animation: happiness-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* Float animation for header */
+  @keyframes gentle-float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .gentle-float {
+    animation: gentle-float 3s ease-in-out infinite;
+  }
+
+  /* Sparkle */
+  @keyframes sparkle-fade {
+    0% { opacity: 1; transform: scale(0) translateY(0); }
+    50% { opacity: 1; transform: scale(1.2) translateY(-10px); }
+    100% { opacity: 0; transform: scale(0.8) translateY(-20px); }
+  }
+
+  .sparkle-up {
+    animation: sparkle-fade 0.7s ease-out forwards;
+  }
+
+  /* Grass waves */
+  @keyframes sway {
+    0%, 100% { transform: rotate(-2deg); }
+    50% { transform: rotate(2deg); }
+  }
+}
